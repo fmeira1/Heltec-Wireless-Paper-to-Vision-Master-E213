@@ -3719,7 +3719,11 @@ static void goToSleep() {
   esp_wifi_stop();
   btStop();
 
-  Platform::prepareToSleep();
+  // Vision Master E213 platform in heltec-eink-modules doesn't expose
+  // prepareToSleep(). Pala One never initializes the SX1262, so the LoRa
+  // radio is already in low-power post-reset state. Just drop VExt to cut
+  // power to the display rail before deep sleep.
+  Platform::VExtOff();
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
   esp_sleep_enable_ext0_wakeup((gpio_num_t)BTN, 0);
   delay(50);
