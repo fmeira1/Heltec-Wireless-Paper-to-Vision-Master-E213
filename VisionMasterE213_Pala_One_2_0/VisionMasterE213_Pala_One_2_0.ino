@@ -66,14 +66,16 @@ const uint8_t* MAIN_FONT = u8g2_font_helvR08_te;
 const uint8_t* BOLD_FONT = u8g2_font_helvB08_te;
 
 #define BTN 0
-// Battery reading disabled for first E213 build.
-// Vision Master E213 uses GPIO 17 as ADC_CTRL (vs 19 on Wireless Paper V1.x).
-// The VBAT ADC input pin is not documented in the public datasheet; once the
-// display works, identify the correct pin from the schematic and re-enable.
-#define HAS_BATTERY 0
+// Vision Master E213 battery monitoring (reference: Meshtastic firmware
+// variants/esp32s3/heltec_vision_master_e213/variant.h). Note these differ
+// from both the public datasheet and the Wireless Paper V1.x defaults.
+#define HAS_BATTERY 1
 #if HAS_BATTERY
-  #define BAT_ADC_CTRL 17
-  #define BAT_ADC_IN   20   // TODO: confirm for Vision Master E213
+  #define BAT_ADC_CTRL          46             // GPIO 46 — drives the divider gate
+  #define BAT_ADC_IN            7              // GPIO 7 (ADC1_CH6) — reads VBAT
+  #define BAT_ADC_CTRL_ACTIVE   HIGH           // E213 enables the divider HIGH (V1.x was LOW)
+  #define BAT_ADC_ATTEN         ADC_2_5db      // E213 uses ~1.1 V reference (V1.x used 11 dB)
+  #define BAT_DIVIDER_RATIO     5.047f         // 4.9 * 1.03 — Meshtastic calibration (V1.x was 2.0)
 #endif
 
 // ============================================================================
@@ -1566,7 +1568,7 @@ static const char* addBookmarkForCurrentBook() {
 static inline void adcSetupOnce() {
   pinMode(BAT_ADC_IN, INPUT);
   analogReadResolution(12);
-  analogSetPinAttenuation(BAT_ADC_IN, ADC_11db);
+  analogSetPinAttenuation(BAT_ADC_IN, BAT_ADC_ATTEN);
 }
 
 static int cmpUint16(const void* a, const void* b) {
@@ -1585,7 +1587,7 @@ static inline float clampf(float x, float lo, float hi) {
 
 static uint32_t readAdcMilliVoltsStable() {
   pinMode(BAT_ADC_CTRL, OUTPUT);
-  digitalWrite(BAT_ADC_CTRL, LOW);
+  digitalWrite(BAT_ADC_CTRL, BAT_ADC_CTRL_ACTIVE);
   delay(12);
 
   (void)analogReadMilliVolts(BAT_ADC_IN);
@@ -1600,7 +1602,7 @@ static uint32_t readAdcMilliVoltsStable() {
     delay(2);
   }
 
-  pinMode(BAT_ADC_CTRL, INPUT);
+  digitalWrite(BAT_ADC_CTRL, !BAT_ADC_CTRL_ACTIVE);
   qsort(vals, N, sizeof(vals[0]), cmpUint16);
 
   uint32_t sum = 0;
@@ -1610,7 +1612,7 @@ static uint32_t readAdcMilliVoltsStable() {
 
 static float readBatteryVoltageRaw() {
   uint32_t mv = readAdcMilliVoltsStable();
-  float v = ((float)mv / 1000.0f) * 2.0f;
+  float v = ((float)mv / 1000.0f) * BAT_DIVIDER_RATIO;
   v *= g_battery.calibrationFactor;
   return v;
 }
